@@ -2,18 +2,20 @@ import sqlite3
 import requests
 import logging
 import asyncio
+import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
-API_KEY = "3ea10a856b380134944184dfd394454c"
+
+# سحب البيانات من Railway Variables
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_KEY = os.getenv("API_KEY")
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 
-# تم تعديل الأسعار بناءً على طلبك الجديد
 PRICES = {"followers": 35, "likes": 20, "views": 6}
 
 SERVICES = {
@@ -72,7 +74,7 @@ async def check_balance(call: types.CallbackQuery):
 @dp.callback_query(F.data == "add_balance")
 async def add_balance(call: types.CallbackQuery):
     await call.answer()
-    text = ("💰 **شحن الرصيد**\n\nيرجى تحويل المبلغ على رقم فودافون كاش أو إنستا باي:\n`01011496150`\n\n⚠️ **ملاحظة:** أرسل إيصال التحويل هنا للمراجعة.")
+    text = ("💰 **شحن الرصيد**\n\nيرجى تحويل المبلغ على رقم فودافون كاش أو إنستا باي:\n`01011496150`\n\⚠️ **ملاحظة:** أرسل إيصال التحويل هنا للمراجعة.")
     await call.message.answer(text, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("buy_"))
@@ -107,8 +109,8 @@ async def confirm_order(msg: types.Message, state: FSMContext):
                 cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total_price'], msg.from_user.id))
                 db.commit()
                 await msg.answer("✅ تم التنفيذ بنجاح!")
-            else: await msg.answer("❌ خطأ في الاتصال.")
-        except: await msg.answer("❌ حدث خطأ تقني.")
+            else: await msg.answer(f"❌ خطأ في الاتصال بالسيرفر: {req.status_code}")
+        except Exception as e: await msg.answer(f"❌ حدث خطأ تقني: {str(e)}")
     else: await msg.answer("❌ رصيدك غير كافٍ!")
     await state.clear()
 
@@ -121,12 +123,12 @@ async def handle_photo(message: types.Message):
 async def admin_add(message: types.Message):
     if message.from_user.id == ADMIN_ID:
         args = message.text.split()
-        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (args[2], args[1]))
-        db.commit()
-        await message.answer(f"✅ تم إضافة {args[2]} للمستخدم {args[1]}")
+        if len(args) >= 3:
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (args[2], args[1]))
+            db.commit()
+            await message.answer(f"✅ تم إضافة {args[2]} للمستخدم {args[1]}")
 
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
