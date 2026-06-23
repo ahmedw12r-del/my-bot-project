@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 # إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
-# --- التعريفات الثابتة (تم حل المشكلة بوضعها هنا مباشرة) ---
+# --- التعريفات الثابتة ---
 BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
 API_KEY = "e20891c4d8d4db32fc1bc53f173c0f1e"
 ADMIN_ID = 8201315070
@@ -104,15 +104,16 @@ async def confirm_order(msg: types.Message, state: FSMContext):
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (msg.from_user.id,))
     res = cursor.fetchone()
     if res and res[0] >= data['total_price']:
+        status_msg = await msg.answer("⏳ جاري تنفيذ طلبك، يرجى الانتظار 10 دقائق حتى يكتمل...")
         payload = {'key': API_KEY, 'action': 'add', 'service': data['service_id'], 'link': msg.text, 'quantity': data['qty']}
         try:
             req = requests.post(SMMWIZ_URL, data=payload)
             if req.status_code == 200:
                 cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total_price'], msg.from_user.id))
                 db.commit()
-                await msg.answer("✅ تم التنفيذ بنجاح!")
-            else: await msg.answer(f"❌ خطأ في الاتصال: {req.status_code}")
-        except Exception as e: await msg.answer(f"❌ حدث خطأ: {str(e)}")
+                await status_msg.edit_text("✅ تم قبول الطلب بنجاح!\nيرجى الانتظار 10 دقائق حتى يكتمل التنفيذ.")
+            else: await status_msg.edit_text(f"❌ خطأ في الاتصال: {req.status_code}")
+        except Exception as e: await status_msg.edit_text(f"❌ حدث خطأ: {str(e)}")
     else: await msg.answer("❌ رصيدك غير كافٍ!")
     await state.clear()
 
@@ -129,6 +130,9 @@ async def admin_add(message: types.Message):
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (args[2], args[1]))
             db.commit()
             await message.answer(f"✅ تم إضافة {args[2]} للمستخدم {args[1]}")
+            try:
+                await bot.send_message(chat_id=args[1], text=f"🎉 **مبروك! تم شحن رصيدك**\nتمت إضافة `{args[2]}` جنيه إلى حسابك بنجاح.")
+            except: pass
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
