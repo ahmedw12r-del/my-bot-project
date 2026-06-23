@@ -2,20 +2,21 @@ import sqlite3
 import requests
 import logging
 import asyncio
-import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+# إعداد السجلات
 logging.basicConfig(level=logging.INFO)
 
-# سحب البيانات من Railway Variables
-BOT_TOKEN = os.getenv("8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw")
-API_KEY = os.getenv("3ea10a856b380134944184dfd394454c")
+# --- التعريفات الثابتة (تم حل المشكلة بوضعها هنا مباشرة) ---
+BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
+API_KEY = "3ea10a856b380134944184dfd394454c"
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 
+# إعدادات الخدمة والأسعار
 PRICES = {"followers": 35, "likes": 20, "views": 6}
 
 SERVICES = {
@@ -28,6 +29,7 @@ SERVICES = {
     "14245": {"name": "مشاهدات انستقرام", "price": PRICES["views"]},
 }
 
+# تهيئة البوت وقاعدة البيانات
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db = sqlite3.connect("store.db", check_same_thread=False)
@@ -74,7 +76,7 @@ async def check_balance(call: types.CallbackQuery):
 @dp.callback_query(F.data == "add_balance")
 async def add_balance(call: types.CallbackQuery):
     await call.answer()
-    text = ("💰 **شحن الرصيد**\n\nيرجى تحويل المبلغ على رقم فودافون كاش أو إنستا باي:\n`01011496150`\n\⚠️ **ملاحظة:** أرسل إيصال التحويل هنا للمراجعة.")
+    text = ("💰 **شحن الرصيد**\n\nيرجى تحويل المبلغ على رقم فودافون كاش أو إنستا باي:\n`01011496150`\n\n⚠️ **ملاحظة:** أرسل إيصال التحويل هنا للمراجعة.")
     await call.message.answer(text, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("buy_"))
@@ -109,8 +111,8 @@ async def confirm_order(msg: types.Message, state: FSMContext):
                 cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total_price'], msg.from_user.id))
                 db.commit()
                 await msg.answer("✅ تم التنفيذ بنجاح!")
-            else: await msg.answer(f"❌ خطأ في الاتصال بالسيرفر: {req.status_code}")
-        except Exception as e: await msg.answer(f"❌ حدث خطأ تقني: {str(e)}")
+            else: await msg.answer(f"❌ خطأ في الاتصال: {req.status_code}")
+        except Exception as e: await msg.answer(f"❌ حدث خطأ: {str(e)}")
     else: await msg.answer("❌ رصيدك غير كافٍ!")
     await state.clear()
 
@@ -129,6 +131,7 @@ async def admin_add(message: types.Message):
             await message.answer(f"✅ تم إضافة {args[2]} للمستخدم {args[1]}")
 
 async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
