@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 
 # --- التعريفات الثابتة (تم حل المشكلة بوضعها هنا مباشرة) ---
 BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
-API_KEY = "3ea10a856b380134944184dfd394454c"
+API_KEY = "e20891c4d8d4db32fc1bc53f173c0f1e"
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 
