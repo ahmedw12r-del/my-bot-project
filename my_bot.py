@@ -11,8 +11,8 @@ from aiogram.fsm.state import State, StatesGroup
 logging.basicConfig(level=logging.INFO)
 
 # سحب البيانات من Railway Variables
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_KEY = os.getenv("API_KEY")
+BOT_TOKEN = os.getenv("8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw")
+API_KEY = os.getenv("3ea10a856b380134944184dfd394454c")
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 
