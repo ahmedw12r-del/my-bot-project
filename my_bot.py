@@ -12,7 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 # --- الإعدادات ---
 BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
-API_KEY = "3ea10a856b380134944184dfd394454c"
+API_KEY = "758ce41e3232ffe511f240c4d184fdb4"
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 WHATSAPP_LINK = "https://wa.me/201011496150"
