@@ -3,6 +3,7 @@ import requests
 import logging
 import asyncio
 import re
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -16,7 +17,7 @@ API_KEY = "3ea10a856b380134944184dfd394454c"
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
 
-# --- قاعدة بيانات وتصنيفات الخدمات ---
+# --- هيكلة الخدمات والأسعار ---
 CATEGORIES = {
     "insta": {
         "name": "📸 انستجرام",
@@ -90,19 +91,21 @@ async def show_dashboard(call: types.CallbackQuery):
     cursor.execute("SELECT name, balance FROM users WHERE user_id=?", (call.from_user.id,))
     user = cursor.fetchone()
     name, bal = user if user else ("غير مسجل", 0)
+    
     dashboard = (
-        f"📊 **لوحة تحكم المستخدم**\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"👤 الاسم: {name}\n"
-        f"💰 الرصيد الحالي: {bal} ج.م\n"
-        f"🆔 ID: {call.from_user.id}\n"
+        f"📊  **لوحة تحكم المستخدم**\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+        f"👤  الاسم:   {name}\n\n"
+        f"💰  الرصيد:   {bal}  ج.م\n\n"
+        f"🆔  الرقم التعريفي:   {call.from_user.id}\n\n"
         f"━━━━━━━━━━━━━━━"
     )
+    
     await call.message.edit_text(dashboard, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]
     ]))
 
-# --- نظام الخدمات ---
+# --- إدارة الخدمات ---
 @dp.callback_query(F.data == "categories")
 async def show_categories(call: types.CallbackQuery):
     btns = [[types.InlineKeyboardButton(text=v['name'], callback_data=f"cat_{k}")] for k, v in CATEGORIES.items()]
@@ -124,9 +127,9 @@ async def add_balance(call: types.CallbackQuery, state: FSMContext):
 
 @dp.message(UserStates.waiting_for_amount)
 async def get_amount(message: types.Message, state: FSMContext):
-    if not message.text.isdigit(): return await message.answer("أدخل أرقاماً صحيحة فقط!")
+    if not message.text.isdigit(): return await message.answer("يرجى إدخال أرقام فقط!")
     await state.update_data(amount=message.text)
-    await message.answer("✅ تمام، أرسل سكرين شوت الإيصال للمراجعة:")
+    await message.answer("✅ تمام، أرسل سكرين شوت التحويل الآن للمراجعة:")
     await state.set_state(UserStates.waiting_for_photo)
 
 @dp.message(UserStates.waiting_for_photo, F.photo)
@@ -136,11 +139,11 @@ async def handle_photo(message: types.Message, state: FSMContext):
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[
         types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{amt}"),
         types.InlineKeyboardButton(text="❌ رفض", callback_data=f"rej_{message.from_user.id}")]])
-    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 طلب إيداع: {amt} ج\nمن: {message.from_user.full_name}", reply_markup=kb)
-    await message.answer("تم إرسال طلبك للإدارة.")
+    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"طلب إيداع: {amt} ج\nمن: {message.from_user.full_name}", reply_markup=kb)
+    await message.answer("تم إرسال الطلب للإدارة.")
     await state.clear()
 
-# --- إتمام الشراء والحساب التلقائي ---
+# --- إتمام الشراء وحساب التكلفة ---
 @dp.callback_query(F.data.startswith("buy_"))
 async def select_service(call: types.CallbackQuery, state: FSMContext):
     _, cat, sid = call.data.split("_")
@@ -163,8 +166,7 @@ async def get_qty(msg: types.Message, state: FSMContext):
 async def finish_order(msg: types.Message, state: FSMContext):
     if not re.match(r'https?://', msg.text): return await msg.answer("رابط غير صحيح!")
     data = await state.get_data()
-    # إشعار الإدارة
-    await bot.send_message(ADMIN_ID, f"🛒 طلب جديد!\nاسم العميل: {msg.from_user.full_name}\nالخدمة: {data['sid']}\nالكمية: {data['qty']}")
+    await bot.send_message(ADMIN_ID, f"🛒 طلب جديد من {msg.from_user.full_name}\nالخدمة: {data['sid']}\nالكمية: {data['qty']}")
     await msg.answer("✅ تم إرسال طلبك بنجاح!")
     await state.clear()
 
@@ -174,16 +176,16 @@ async def back_to_main(call: types.CallbackQuery):
     await call.message.edit_text("أهلاً بك في Tik Wolf! 🐺 اختر من القائمة:", reply_markup=main_menu())
 
 @dp.callback_query(F.data.startswith("app_"))
-async def approve_payment(call: types.CallbackQuery):
+async def approve(call: types.CallbackQuery):
     _, uid, amt = call.data.split("_")
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amt, uid))
     db.commit()
-    await call.message.edit_caption(caption="✅ تم الشحن بنجاح.")
+    await call.message.edit_caption(caption="✅ تمت الموافقة.")
     await bot.send_message(uid, f"🎉 تم إضافة {amt} جنيه لرصيدك!")
 
-async def main():
+async def main(): 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     asyncio.run(main())
