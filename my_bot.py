@@ -40,7 +40,7 @@ CATEGORIES = {
         "name": "🎵 TikTok",
         "services": {
             "11775": {"name": "Likes", "price": 20},
-            "19968": {"name": "Views", "price": 6}
+            "19967": {"name": "Views", "price": 6}
         }
     }
 }
