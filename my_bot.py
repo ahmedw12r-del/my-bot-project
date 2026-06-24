@@ -80,7 +80,7 @@ async def check_order_status():
             except: pass
         await asyncio.sleep(120)
 
-# --- القائمة الرئيسية ---
+# --- القوائم ---
 def main_menu():
     return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🛒 شراء خدمات", callback_data="categories")],
@@ -97,7 +97,7 @@ async def start(message: types.Message, state: FSMContext):
         await message.answer("أهلاً بك في Tik Wolf! 🐺\nيرجى كتابة اسمك للبدء:")
         await state.set_state(UserStates.waiting_for_name)
     else:
-        await message.answer("مرحباً بك مجدداً! اختر الخدمة المطلوبة:", reply_markup=main_menu())
+        await message.answer("مرحباً بك مجدداً في Tik Wolf! 🐺\nاختر ما تريد من القائمة:", reply_markup=main_menu())
 
 @dp.message(UserStates.waiting_for_name)
 async def set_name(message: types.Message, state: FSMContext):
@@ -113,9 +113,9 @@ async def show_dashboard(call: types.CallbackQuery):
     name, bal = user if user else ("غير مسجل", 0)
     dashboard = (
         f"📊 ── **لوحة تحكم المستخدم** ── 📊\n\n"
-        f"👤 الاسم: {name}\n\n"
-        f"💰 الرصيد الحالي: {bal} ج.م\n\n"
-        f"🆔 ID: {call.from_user.id}\n\n"
+        f"👤 الاسم : {name}\n\n"
+        f"💰 الرصيد الحالي : {bal} ج.م\n\n"
+        f"🆔 ID : {call.from_user.id}\n\n"
         "━━━━━━━━━━━━━━━━━━"
     )
     await call.message.edit_text(dashboard, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]]))
@@ -148,20 +148,20 @@ async def handle_photo(message: types.Message, state: FSMContext):
     amt = data.get('amount')
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{amt}"), types.InlineKeyboardButton(text="❌ رفض", callback_data=f"rej_")]])
     await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 إيداع: {amt} ج من {message.from_user.full_name}", reply_markup=kb)
-    await message.answer("تم إرسال الطلب للإدارة. سيتم الشحن فور المراجعة.")
+    await message.answer("تم إرسال الطلب للإدارة بنجاح.")
     await state.clear()
 
 @dp.callback_query(F.data == "categories")
 async def show_categories(call: types.CallbackQuery):
     btns = [[types.InlineKeyboardButton(text=v['name'], callback_data=f"cat_{k}")] for k, v in CATEGORIES.items()]
     btns.append([types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")])
-    await call.message.edit_text("✨ **قائمة المنصات المتاحة** ✨", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
+    await call.message.edit_text("✨ **اختر المنصة لبدء الطلب** ✨", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def show_services(call: types.CallbackQuery):
-    cat_id = call.data.split("_")[1]
-    msg = f"🔥 **خدمات {CATEGORIES[cat_id]['name']}** 🔥\n\nاختر الخدمة لبدء الطلب:\n"
-    btns = [[types.InlineKeyboardButton(text=f"✨ {v['name']} | السعر: {v['price']} ج", callback_data=f"buy_{cat_id}_{sid}")] for sid, v in CATEGORIES[cat_id]['services'].items()]
+    cat = call.data.split("_")[1]
+    msg = f"🔥 **خدمات {CATEGORIES[cat]['name']}** 🔥\n\nاختر الخدمة (السعر لكل 1000):\n"
+    btns = [[types.InlineKeyboardButton(text=f"✨ {v['name']} | {v['price']} ج / 1000", callback_data=f"buy_{cat}_{sid}")] for sid, v in CATEGORIES[cat]['services'].items()]
     btns.append([types.InlineKeyboardButton(text="🔙 رجوع", callback_data="categories")])
     await call.message.edit_text(msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
@@ -189,8 +189,8 @@ async def finish_order(msg: types.Message, state: FSMContext):
     if req.status_code == 200:
         cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (req.json()['order'], msg.from_user.id))
         db.commit()
-        await msg.answer("✅ تم إرسال طلبك بنجاح! سنقوم بإخطارك عند بدء التنفيذ.")
-    else: await msg.answer("❌ خطأ في الاتصال بالسيرفر.")
+        await msg.answer("✅ تم إرسال طلبك بنجاح! سأقوم بإخطارك بالتحديثات.")
+    else: await msg.answer("❌ خطأ في الاتصال.")
     await state.clear()
 
 @dp.callback_query(F.data.startswith("app_"))
@@ -199,11 +199,7 @@ async def approve(call: types.CallbackQuery):
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amt, uid))
     db.commit()
     await call.message.edit_caption(caption="✅ تمت الموافقة.")
-    await bot.send_message(uid, f"🎉 تم شحن رصيدك بـ {amt} ج!")
-
-@dp.callback_query(F.data == "main_menu")
-async def back_to_main(call: types.CallbackQuery):
-    await call.message.edit_text("🏠 القائمة الرئيسية:", reply_markup=main_menu())
+    await bot.send_message(uid, f"🎉 تم شحن {amt} ج لرصيدك!")
 
 async def main():
     asyncio.create_task(check_order_status())
