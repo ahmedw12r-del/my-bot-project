@@ -49,6 +49,7 @@ dp = Dispatcher(storage=MemoryStorage())
 db = sqlite3.connect("store.db", check_same_thread=False)
 cursor = db.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, name TEXT, balance REAL DEFAULT 0)")
+cursor.execute("CREATE TABLE IF NOT EXISTS orders (order_id TEXT PRIMARY KEY, user_id INTEGER, status TEXT)")
 db.commit()
 
 # --- الحالات (States) ---
@@ -58,6 +59,26 @@ class UserStates(StatesGroup):
     waiting_for_photo = State()
     waiting_for_quantity = State()
     waiting_for_link = State()
+
+# --- نظام مراقبة الطلبات التلقائي ---
+async def check_order_status():
+    while True:
+        cursor.execute("SELECT order_id, user_id FROM orders WHERE status != 'Completed'")
+        orders = cursor.fetchall()
+        for o_id, u_id in orders:
+            try:
+                req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'status', 'order': o_id})
+                if req.status_code == 200:
+                    status = req.json().get('status')
+                    if status == 'Pending':
+                        await bot.send_message(u_id, "⏳ طلبك قيد الانتظار، انتظر دقيقتين حتى يتم التنفيذ.")
+                    elif status == 'In Progress':
+                        cursor.execute("UPDATE orders SET status = 'Completed' WHERE order_id = ?", (o_id,))
+                        db.commit()
+                        await bot.send_message(u_id, "🚀 جاري تنفيذ طلبك الآن! سيكتمل خلال 5 دقائق.")
+            except Exception as e:
+                logging.error(f"Error checking status: {e}")
+        await asyncio.sleep(120) # فحص كل دقيقتين
 
 # --- القائمة الرئيسية ---
 def main_menu():
@@ -91,7 +112,6 @@ async def show_dashboard(call: types.CallbackQuery):
     cursor.execute("SELECT name, balance FROM users WHERE user_id=?", (call.from_user.id,))
     user = cursor.fetchone()
     name, bal = user if user else ("غير مسجل", 0)
-    
     dashboard = (
         f"📊  **لوحة تحكم المستخدم**\n"
         f"━━━━━━━━━━━━━━━\n\n"
@@ -100,7 +120,6 @@ async def show_dashboard(call: types.CallbackQuery):
         f"🆔  الرقم التعريفي:   {call.from_user.id}\n\n"
         f"━━━━━━━━━━━━━━━"
     )
-    
     await call.message.edit_text(dashboard, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]
     ]))
@@ -166,8 +185,14 @@ async def get_qty(msg: types.Message, state: FSMContext):
 async def finish_order(msg: types.Message, state: FSMContext):
     if not re.match(r'https?://', msg.text): return await msg.answer("رابط غير صحيح!")
     data = await state.get_data()
-    await bot.send_message(ADMIN_ID, f"🛒 طلب جديد من {msg.from_user.full_name}\nالخدمة: {data['sid']}\nالكمية: {data['qty']}")
-    await msg.answer("✅ تم إرسال طلبك بنجاح!")
+    payload = {'key': API_KEY, 'action': 'add', 'service': data['sid'], 'link': msg.text, 'quantity': data['qty']}
+    req = requests.post(SMMWIZ_URL, data=payload)
+    if req.status_code == 200:
+        order_id = req.json().get('order')
+        cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (order_id, msg.from_user.id))
+        db.commit()
+        await msg.answer("✅ تم إرسال طلبك! سأقوم بإخطارك بتحديثات التنفيذ.")
+    else: await msg.answer("❌ خطأ في الاتصال بالخدمة.")
     await state.clear()
 
 # --- دوال الربط ---
@@ -183,9 +208,10 @@ async def approve(call: types.CallbackQuery):
     await call.message.edit_caption(caption="✅ تمت الموافقة.")
     await bot.send_message(uid, f"🎉 تم إضافة {amt} جنيه لرصيدك!")
 
-async def main(): 
+async def main():
+    asyncio.create_task(check_order_status()) # تشغيل المراقبة التلقائية
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     asyncio.run(main())
