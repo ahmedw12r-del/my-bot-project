@@ -21,28 +21,9 @@ logging.basicConfig(level=logging.INFO)
 
 # --- هيكلة الخدمات ---
 CATEGORIES = {
-    "insta": {
-        "name": "📸 Instagram",
-        "services": {
-            "17678": {"name": "Followers", "price": 35},
-            "20216": {"name": "Likes", "price": 20},
-            "14245": {"name": "Views", "price": 6}
-        }
-    },
-    "fb": {
-        "name": "🔵 Facebook",
-        "services": {
-            "17333": {"name": "Followers", "price": 35},
-            "2981": {"name": "Likes", "price": 20}
-        }
-    },
-    "tiktok": {
-        "name": "🎵 TikTok",
-        "services": {
-            "11775": {"name": "Likes", "price": 20},
-            "19967": {"name": "Views", "price": 6}
-        }
-    }
+    "insta": {"name": "📸 Instagram", "services": {"17678": {"name": "Followers", "price": 35}, "20216": {"name": "Likes", "price": 20}, "14245": {"name": "Views", "price": 6}}},
+    "fb": {"name": "🔵 Facebook", "services": {"17333": {"name": "Followers", "price": 35}, "2981": {"name": "Likes", "price": 20}}},
+    "tiktok": {"name": "🎵 TikTok", "services": {"11775": {"name": "Likes", "price": 20}, "19967": {"name": "Views", "price": 6}}}
 }
 
 # --- تهيئة البوت وقاعدة البيانات ---
@@ -61,36 +42,24 @@ class UserStates(StatesGroup):
     waiting_for_quantity = State()
     waiting_for_link = State()
 
-# --- دالة مراقبة الطلبات المحدثة ---
+# --- دالة مراقبة الطلبات (محدثة للريسيلر) ---
 async def check_order_status():
     while True:
-        cursor.execute("SELECT order_id, user_id, status FROM orders WHERE status != 'Completed'")
+        cursor.execute("SELECT order_id, user_id FROM orders WHERE status != 'Completed'")
         orders = cursor.fetchall()
-        for o_id, u_id, current_status in orders:
+        for o_id, u_id in orders:
             try:
                 req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'status', 'order': o_id})
                 if req.status_code == 200:
                     status = req.json().get('status')
-                    
-                    # إذا كان الطلب في الموقع "قيد الانتظار"
-                    if status == 'Pending' and current_status != 'Pending_Notified':
-                        await bot.send_message(u_id, "⏳ طلبك في قائمة الانتظار، يرجى الانتظار حتى يبدأ تنفيذ الطلب.")
-                        cursor.execute("UPDATE orders SET status = 'Pending_Notified' WHERE order_id = ?", (o_id,))
-                        db.commit()
-                    
-                    # إذا كان الطلب في الموقع "قيد التنفيذ"
-                    elif status == 'In progress' and current_status != 'InProgress_Notified':
+                    if status == 'Pending':
+                        await bot.send_message(u_id, "⏳ طلبك في قائمة الانتظار، يرجى الانتظار دقيقتين حتى يبدأ التنفيذ.")
+                    elif status == 'In Progress':
                         await bot.send_message(u_id, "🚀 طلبك قيد التنفيذ الآن! ادخل وشاهد التغيير بنفسك، سيتم اكتمال الطلب خلال 10 دقائق.")
-                        cursor.execute("UPDATE orders SET status = 'InProgress_Notified' WHERE order_id = ?", (o_id,))
-                        db.commit()
-
-                    # إذا اكتمل الطلب
-                    elif status == 'Completed':
                         cursor.execute("UPDATE orders SET status = 'Completed' WHERE order_id = ?", (o_id,))
                         db.commit()
-                        await bot.send_message(u_id, "✅ تم تنفيذ طلبك بنجاح!")
             except: pass
-        await asyncio.sleep(60) # فحص كل دقيقة
+        await asyncio.sleep(120)
 
 # --- القائمة الرئيسية ---
 def main_menu():
@@ -123,18 +92,20 @@ async def show_dashboard(call: types.CallbackQuery):
     cursor.execute("SELECT name, balance FROM users WHERE user_id=?", (call.from_user.id,))
     user = cursor.fetchone()
     name, bal = user if user else ("غير مسجل", 0)
-    await call.message.edit_text(f"📊 **الرصيد الحالي:** {bal} ج.م", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]]))
+    dashboard = f"📊 ── **لوحة تحكم المستخدم** ── 📊\n\n👤 الاسم: {name}\n\n💰 الرصيد الحالي: {bal} ج.م\n\n🆔 ID: {call.from_user.id}\n\n━━━━━━━━━━━━━━━━━━"
+    await call.message.edit_text(dashboard, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")]]))
 
 @dp.callback_query(F.data == "add_balance")
 async def add_balance(call: types.CallbackQuery, state: FSMContext):
-    await call.message.edit_text("أرسل المبلغ المحول (أرقام فقط):")
+    txt = "💰 ── **نظام شحن الرصيد** ── 💰\n\nيرجى تحويل المبلغ المطلوب إلى الرقم التالي:\n📞 `01011496150`\n\nمتاح التحويل عبر:\n✅ Vodafone Cash\n✅ InstaPay\n\n━━━━━━ ⚠️ تنبيه ━━━━━━\nبعد إتمام التحويل، أرسل المبلغ (أرقام فقط) في الرسالة التالية:"
+    await call.message.edit_text(txt, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]]))
     await state.set_state(UserStates.waiting_for_amount)
 
 @dp.message(UserStates.waiting_for_amount)
 async def get_amount(message: types.Message, state: FSMContext):
     if not message.text.isdigit(): return await message.answer("❌ يرجى إدخال أرقام فقط!")
     await state.update_data(amount=message.text)
-    await message.answer("✅ أرسل سكرين شوت التحويل:")
+    await message.answer("✅ تمام، أرسل سكرين شوت التحويل للمراجعة:")
     await state.set_state(UserStates.waiting_for_photo)
 
 @dp.message(UserStates.waiting_for_photo, F.photo)
@@ -143,37 +114,37 @@ async def handle_photo(message: types.Message, state: FSMContext):
     amt = data.get('amount')
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{amt}")]])
     await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 إيداع: {amt} ج من {message.from_user.full_name}", reply_markup=kb)
-    await message.answer("تم إرسال الطلب للإدارة.")
+    await message.answer("تم إرسال الطلب للإدارة. سيتم الشحن فور المراجعة.")
     await state.clear()
 
 @dp.callback_query(F.data == "categories")
 async def show_categories(call: types.CallbackQuery):
     btns = [[types.InlineKeyboardButton(text=v['name'], callback_data=f"cat_{k}")] for k, v in CATEGORIES.items()]
-    btns.append([types.InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
-    await call.message.edit_text("اختر المنصة:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
+    btns.append([types.InlineKeyboardButton(text="🔙 القائمة الرئيسية", callback_data="main_menu")])
+    await call.message.edit_text("✨ **قائمة المنصات المتاحة** ✨", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def show_services(call: types.CallbackQuery):
     cat_id = call.data.split("_")[1]
-    btns = [[types.InlineKeyboardButton(text=f"{v['name']} ({v['price']} ج)", callback_data=f"buy_{cat_id}_{sid}")] for sid, v in CATEGORIES[cat_id]['services'].items()]
-    await call.message.edit_text("اختر الخدمة:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
+    btns = [[types.InlineKeyboardButton(text=f"✨ {v['name']} | السعر: {v['price']} ج", callback_data=f"buy_{cat_id}_{sid}")] for sid, v in CATEGORIES[cat_id]['services'].items()]
+    btns.append([types.InlineKeyboardButton(text="🔙 رجوع", callback_data="categories")])
+    await call.message.edit_text(f"🔥 **خدمات {CATEGORIES[cat_id]['name']}** 🔥", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def select_service(call: types.CallbackQuery, state: FSMContext):
     _, cat, sid = call.data.split("_")
     await state.update_data(sid=sid, cat=cat)
-    await call.message.answer("📝 أدخل الكمية:")
+    await call.message.answer("📝 أدخل الكمية المطلوبة:")
     await state.set_state(UserStates.waiting_for_quantity)
 
 @dp.message(UserStates.waiting_for_quantity)
 async def get_qty(msg: types.Message, state: FSMContext):
-    if not msg.text.isdigit(): return await msg.answer("❌ أرقام فقط!")
+    if not msg.text.isdigit(): return await msg.answer("❌ يجب إدخال أرقام فقط!")
     qty = int(msg.text)
     data = await state.get_data()
-    service_price = CATEGORIES[data['cat']]['services'][data['sid']]['price']
-    total = (qty / 1000) * service_price
+    total = (qty / 1000) * CATEGORIES[data['cat']]['services'][data['sid']]['price']
     await state.update_data(qty=qty, total=total)
-    await msg.answer(f"💰 التكلفة: {total} ج.م\n🔗 أرسل الرابط:")
+    await msg.answer(f"💰 التكلفة الإجمالية: {total} ج.م\n🔗 أرسل الرابط الآن للتنفيذ:")
     await state.set_state(UserStates.waiting_for_link)
 
 @dp.message(UserStates.waiting_for_link)
@@ -181,19 +152,15 @@ async def finish_order(msg: types.Message, state: FSMContext):
     data = await state.get_data()
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (msg.from_user.id,))
     user_bal = cursor.fetchone()[0]
-    
-    if user_bal < data['total']:
-        return await msg.answer(f"❌ رصيدك غير كافٍ! رصيدك: {user_bal} ج.م")
+    if user_bal < data['total']: return await msg.answer("❌ رصيدك غير كافٍ!")
     
     req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'add', 'service': data['sid'], 'link': msg.text, 'quantity': data['qty']})
-    
-    if req.status_code == 200 and 'order' in req.json():
+    if req.status_code == 200:
         cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total'], msg.from_user.id))
         cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (req.json()['order'], msg.from_user.id))
         db.commit()
-        await msg.answer("✅ تم الطلب بنجاح! سيتم إخطارك بأي تحديث.")
-    else:
-        await msg.answer("❌ فشل الاتصال بالسيرفر.")
+        await msg.answer("✅ تم خصم الرصيد وإرسال طلبك بنجاح!")
+    else: await msg.answer("❌ خطأ في الاتصال بالسيرفر.")
     await state.clear()
 
 @dp.callback_query(F.data.startswith("app_"))
