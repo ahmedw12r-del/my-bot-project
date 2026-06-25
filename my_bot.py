@@ -17,14 +17,14 @@ WHATSAPP_LINK = "https://wa.me/201011496150"
 
 logging.basicConfig(level=logging.INFO)
 
-# --- الخدمات (يمكنك إضافة المزيد هنا) ---
+# --- هيكلة الخدمات (موسع) ---
 CATEGORIES = {
     "insta": {"name": "📸 Instagram", "services": {"17678": {"name": "Followers", "price": 35}, "20216": {"name": "Likes", "price": 20}, "14245": {"name": "Views", "price": 6}}},
     "fb": {"name": "🔵 Facebook", "services": {"17333": {"name": "Followers", "price": 35}, "2981": {"name": "Likes", "price": 20}}},
     "tiktok": {"name": "🎵 TikTok", "services": {"11775": {"name": "Likes", "price": 20}, "19967": {"name": "Views", "price": 6}}}
 }
 
-# --- تهيئة البوت وقاعدة البيانات ---
+# --- تهيئة ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 db = sqlite3.connect("store.db", check_same_thread=False)
@@ -34,11 +34,8 @@ cursor.execute("CREATE TABLE IF NOT EXISTS orders (order_id TEXT PRIMARY KEY, us
 db.commit()
 
 class UserStates(StatesGroup):
-    waiting_for_name = State()
-    waiting_for_amount = State()
-    waiting_for_photo = State()
-    waiting_for_quantity = State()
-    waiting_for_link = State()
+    waiting_for_name = State(); waiting_for_amount = State(); waiting_for_photo = State()
+    waiting_for_quantity = State(); waiting_for_link = State()
 
 # --- دالة مراقبة الطلبات ---
 async def check_order_status():
@@ -46,131 +43,103 @@ async def check_order_status():
         cursor.execute("SELECT order_id, user_id FROM orders WHERE status != 'Completed'")
         for o_id, u_id in cursor.fetchall():
             try:
-                res = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'status', 'order': o_id}).json()
-                if res.get('status') == 'Completed':
+                req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'status', 'order': o_id})
+                if req.status_code == 200 and req.json().get('status') == 'Completed':
                     cursor.execute("UPDATE orders SET status = 'Completed' WHERE order_id = ?", (o_id,))
-                    db.commit()
-                    await bot.send_message(u_id, "✅ **تهانينا!** تم تنفيذ طلبك بنجاح.")
+                    db.commit(); await bot.send_message(u_id, "✅ تم تنفيذ طلبك بنجاح!")
             except: pass
         await asyncio.sleep(120)
 
 # --- الواجهات ---
 def main_menu():
     return types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🛒 ── تصفح وشراء الخدمات ── 🛒", callback_data="categories")],
-        [types.InlineKeyboardButton(text="💰 ── شحن الرصيد (InstaPay/VF Cash) ── 💰", callback_data="add_balance")],
-        [types.InlineKeyboardButton(text="💳 ── لوحة التحكم الشخصية ── 💳", callback_data="check_balance")],
-        [types.InlineKeyboardButton(text="🎧 ── الدعم الفني ── 🎧", url=WHATSAPP_LINK)]
+        [types.InlineKeyboardButton(text="🛒 شراء خدمات", callback_data="categories")],
+        [types.InlineKeyboardButton(text="💰 شحن الرصيد (InstaPay / VF Cash)", callback_data="add_balance")],
+        [types.InlineKeyboardButton(text="💳 لوحة التحكم", callback_data="check_balance")],
+        [types.InlineKeyboardButton(text="🎧 الدعم الفني", url=WHATSAPP_LINK)]
     ])
 
-# --- الأوامر الأساسية ---
+# --- الدوال ---
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     cursor.execute("SELECT name FROM users WHERE user_id=?", (message.from_user.id,))
     if not cursor.fetchone():
-        await message.answer("🐺 أهلاً بك في Tik Wolf! يرجى كتابة اسمك للبدء:")
+        await message.answer("أهلاً بك في Tik Wolf! 🐺\nيرجى كتابة اسمك للبدء:")
         await state.set_state(UserStates.waiting_for_name)
-    else:
-        await message.answer("🏠 أهلاً بك مجدداً في Tik Wolf، اختر الخدمة:", reply_markup=main_menu())
+    else: await message.answer("مرحباً بك مجدداً!", reply_markup=main_menu())
 
 @dp.message(UserStates.waiting_for_name)
 async def set_name(message: types.Message, state: FSMContext):
     cursor.execute("INSERT INTO users (user_id, name, balance) VALUES (?, ?, 0)", (message.from_user.id, message.text))
-    db.commit()
-    await message.answer("تم حفظ بياناتك بنجاح! ✅", reply_markup=main_menu())
-    await state.clear()
+    db.commit(); await message.answer("تم الحفظ! ✅", reply_markup=main_menu()); await state.clear()
 
-# --- نظام الشحن ---
+@dp.callback_query(F.data == "check_balance")
+async def show_dashboard(call: types.CallbackQuery):
+    cursor.execute("SELECT name, balance FROM users WHERE user_id=?", (call.from_user.id,))
+    name, bal = cursor.fetchone() or ("غير مسجل", 0)
+    await call.message.edit_text(f"📊 **لوحة التحكم**\n\n👤 الاسم: {name}\n💰 الرصيد: {bal} ج.م", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")]]))
+
 @dp.callback_query(F.data == "add_balance")
 async def add_balance(call: types.CallbackQuery, state: FSMContext):
-    text = ("💰 **نظام شحن الرصيد** 💰\n\n"
-            "مرحباً بك، للشحن يرجى التحويل عبر:\n"
-            "🔹 **فودافون كاش:** `01011496150`\n"
-            "🔹 **InstaPay:** عنوانك البريدي أو رقم الهاتف المحول له.\n\n"
-            "الرجاء إرسال المبلغ (أرقام فقط) ثم سكرين شوت للتحويل.")
-    await call.message.edit_text(text, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 عودة", callback_data="main_menu")]]))
-    await state.set_state(UserStates.waiting_for_amount)
+    msg = ("💰 **نظام شحن الرصيد**\n\n1️⃣ **فودافون كاش:** `01011496150`\n2️⃣ **InstaPay:** متوفر للتحويل المباشر.\n\nأرسل المبلغ المحول (أرقام فقط):")
+    await call.message.edit_text(msg, parse_mode="Markdown"); await state.set_state(UserStates.waiting_for_amount)
 
 @dp.message(UserStates.waiting_for_amount)
 async def get_amount(message: types.Message, state: FSMContext):
-    await state.update_data(amount=message.text)
-    await message.answer("✅ تم تحديد المبلغ! الآن أرسل صورة (سكرين شوت) التحويل:")
-    await state.set_state(UserStates.waiting_for_photo)
+    await state.update_data(amount=message.text); await message.answer("✅ أرسل سكرين شوت التحويل:"); await state.set_state(UserStates.waiting_for_photo)
 
 @dp.message(UserStates.waiting_for_photo, F.photo)
 async def handle_photo(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    amt = data.get('amount')
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="✅ قبول الإيداع", callback_data=f"app_{message.from_user.id}_{amt}")],
-        [types.InlineKeyboardButton(text="❌ رفض", callback_data=f"rej_{message.from_user.id}")]
-    ])
-    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 طلب شحن!\nالمبلغ: {amt} ج.م\nالعميل: {message.from_user.full_name}", reply_markup=kb)
-    await message.answer("✅ تم إرسال طلبك للإدارة للمراجعة.")
-    await state.clear()
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{data['amount']}")]])
+    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 طلب شحن: {data['amount']} ج من {message.from_user.full_name}", reply_markup=kb)
+    await message.answer("تم إرسال الطلب للإدارة."); await state.clear()
 
-# --- لوحة التحكم ---
-@dp.callback_query(F.data == "check_balance")
-async def show_dashboard(call: types.CallbackQuery):
-    cursor.execute("SELECT name, balance FROM users WHERE user_id=?", (call.from_user.id,))
-    user = cursor.fetchone()
-    name, bal = user if user else ("غير مسجل", 0)
-    msg = (f"📊 **لوحة التحكم الشخصية**\n\n"
-           f"👤 الاسم: {name}\n"
-           f"💰 رصيدك المتاح: {bal} ج.م\n"
-           f"🆔 ID: `{call.from_user.id}`")
-    await call.message.edit_text(msg, parse_mode="Markdown", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔙 عودة", callback_data="main_menu")]]))
+@dp.callback_query(F.data.startswith("app_"))
+async def approve(call: types.CallbackQuery):
+    _, uid, amt = call.data.split("_")
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amt, uid)); db.commit()
+    await call.message.edit_caption(caption="✅ تمت الموافقة."); await bot.send_message(uid, f"🎉 تم شحن رصيدك بـ {amt} ج!")
 
-# --- دوال الخدمات ---
 @dp.callback_query(F.data == "categories")
 async def show_cats(call: types.CallbackQuery):
     btns = [[types.InlineKeyboardButton(text=v['name'], callback_data=f"cat_{k}")] for k, v in CATEGORIES.items()]
-    btns.append([types.InlineKeyboardButton(text="🔙 عودة", callback_data="main_menu")])
+    btns.append([types.InlineKeyboardButton(text="🔙 رجوع", callback_data="main_menu")])
     await call.message.edit_text("اختر المنصة:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("cat_"))
-async def show_services(call: types.CallbackQuery):
+async def show_srv(call: types.CallbackQuery):
     cat = call.data.split("_")[1]
-    btns = [[types.InlineKeyboardButton(text=f"{v['name']} ({v['price']} ج/1000)", callback_data=f"buy_{cat}_{sid}")] for sid, v in CATEGORIES[cat]['services'].items()]
+    btns = [[types.InlineKeyboardButton(text=f"{v['name']} ({v['price']} ج)", callback_data=f"buy_{cat}_{sid}")] for sid, v in CATEGORIES[cat]['services'].items()]
     await call.message.edit_text("اختر الخدمة:", reply_markup=types.InlineKeyboardMarkup(inline_keyboard=btns))
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def select_service(call: types.CallbackQuery, state: FSMContext):
     _, cat, sid = call.data.split("_")
-    await state.update_data(sid=sid, cat=cat)
-    await call.message.answer("📝 أدخل الكمية:")
-    await state.set_state(UserStates.waiting_for_quantity)
+    await state.update_data(sid=sid, cat=cat); await call.message.answer("أدخل الكمية:"); await state.set_state(UserStates.waiting_for_quantity)
 
 @dp.message(UserStates.waiting_for_quantity)
 async def get_qty(msg: types.Message, state: FSMContext):
-    await state.update_data(qty=int(msg.text))
-    await msg.answer("🔗 أرسل الرابط الآن:")
-    await state.set_state(UserStates.waiting_for_link)
+    qty = int(msg.text); data = await state.get_data()
+    total = (qty / 1000) * CATEGORIES[data['cat']]['services'][data['sid']]['price']
+    await state.update_data(qty=qty, total=total); await msg.answer(f"💰 التكلفة: {total} ج.م\n🔗 أرسل الرابط:"); await state.set_state(UserStates.waiting_for_link)
 
 @dp.message(UserStates.waiting_for_link)
 async def finish_order(msg: types.Message, state: FSMContext):
     data = await state.get_data()
-    # عملية الشراء من الموقع
-    req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'add', 'service': data['sid'], 'link': msg.text, 'quantity': data['qty']}).json()
-    if 'order' in req:
-        cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (req['order'], msg.from_user.id))
-        db.commit()
-        await msg.answer("✅ تم طلب الخدمة بنجاح!")
+    cursor.execute("SELECT balance FROM users WHERE user_id=?", (msg.from_user.id,))
+    if cursor.fetchone()[0] < data['total']: return await msg.answer("❌ رصيد غير كافٍ!")
+    req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'add', 'service': data['sid'], 'link': msg.text, 'quantity': data['qty']})
+    if req.status_code == 200 and 'order' in req.json():
+        cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total'], msg.from_user.id))
+        cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (req.json()['order'], msg.from_user.id)); db.commit()
+        await msg.answer("✅ تم الطلب بنجاح!")
     await state.clear()
 
-# --- الإدارة ---
-@dp.callback_query(F.data.startswith("app_"))
-async def approve(call: types.CallbackQuery):
-    _, uid, amt = call.data.split("_")
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amt, uid))
-    db.commit()
-    await call.message.edit_caption(caption="✅ تمت الموافقة.")
-    await bot.send_message(uid, f"🎉 تم شحن رصيدك بـ {amt} ج.م")
+@dp.callback_query(F.data == "main_menu")
+async def back(call: types.CallbackQuery): await call.message.edit_text("🏠 القائمة الرئيسية:", reply_markup=main_menu())
 
-# --- تشغيل البوت ---
 async def main():
-    asyncio.create_task(check_order_status())
-    await dp.start_polling(bot)
+    asyncio.create_task(check_order_status()); await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == "__main__": asyncio.run(main())
