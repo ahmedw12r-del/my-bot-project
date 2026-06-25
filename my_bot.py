@@ -11,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # --- الإعدادات ---
-BOT_TOKEN = "8960056224:AAEeYf2SxBa9rfyUEzEnLEf2HGIK5K1Pfrw"
+BOT_TOKEN = "8960056224:AAGMIz19XsxzA7u81NGu8X6tgSL3awwlMSE"
 API_KEY = "758ce41e3232ffe511f240c4d184fdb4"
 ADMIN_ID = 8201315070
 SMMWIZ_URL = "https://smmwiz.com/api/v2"
