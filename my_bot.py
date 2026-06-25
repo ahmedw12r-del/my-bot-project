@@ -17,14 +17,14 @@ WHATSAPP_LINK = "https://wa.me/201011496150"
 
 logging.basicConfig(level=logging.INFO)
 
-# --- الخدمات ---
+# --- هيكلة الخدمات ---
 CATEGORIES = {
     "insta": {"name": "📸 Instagram", "services": {"17678": {"name": "Followers", "price": 35}, "20216": {"name": "Likes", "price": 20}, "14245": {"name": "Views", "price": 6}}},
     "fb": {"name": "🔵 Facebook", "services": {"17333": {"name": "Followers", "price": 35}, "2981": {"name": "Likes", "price": 20}}},
     "tiktok": {"name": "🎵 TikTok", "services": {"11775": {"name": "Likes", "price": 20}, "19967": {"name": "Views", "price": 6}}}
 }
 
-# --- تهيئة البوت ---
+# --- تهيئة البوت وقاعدة البيانات ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 db = sqlite3.connect("store.db", check_same_thread=False)
@@ -54,12 +54,10 @@ async def check_order_status():
                         cursor.execute("UPDATE orders SET status = 'Completed' WHERE order_id = ?", (o_id,))
                         db.commit()
                         await bot.send_message(u_id, "✅ تم تنفيذ طلبك بنجاح!")
-                    elif status == 'In Progress':
-                        await bot.send_message(u_id, "🚀 طلبك قيد التنفيذ الآن، تابع النتائج!")
             except: pass
         await asyncio.sleep(120)
 
-# --- القوائم ---
+# --- الواجهات ---
 def main_menu():
     return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="🛒 شراء خدمات", callback_data="categories")],
@@ -68,7 +66,7 @@ def main_menu():
         [types.InlineKeyboardButton(text="🎧 تواصل مع الدعم الفني", url=WHATSAPP_LINK)]
     ])
 
-# --- الأوامر والدوال ---
+# --- الدوال البرمجية ---
 @dp.message(Command("start"))
 async def start(message: types.Message, state: FSMContext):
     cursor.execute("SELECT name FROM users WHERE user_id=?", (message.from_user.id,))
@@ -108,11 +106,15 @@ async def get_amount(message: types.Message, state: FSMContext):
 async def handle_photo(message: types.Message, state: FSMContext):
     data = await state.get_data()
     amt = data.get('amount')
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{amt}"), types.InlineKeyboardButton(text="❌ رفض", callback_data="rej")]])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="✅ قبول", callback_data=f"app_{message.from_user.id}_{amt}")],
+        [types.InlineKeyboardButton(text="❌ رفض", callback_data=f"rej_{message.from_user.id}")]
+    ])
     await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💸 إيداع: {amt} ج من {message.from_user.full_name}", reply_markup=kb)
     await message.answer("تم الإرسال للإدارة.")
     await state.clear()
 
+# --- نظام الطلبات ---
 @dp.callback_query(F.data == "categories")
 async def show_cats(call: types.CallbackQuery):
     btns = [[types.InlineKeyboardButton(text=v['name'], callback_data=f"cat_{k}")] for k, v in CATEGORIES.items()]
@@ -156,10 +158,10 @@ async def finish_order(msg: types.Message, state: FSMContext):
         db.commit()
         await msg.answer("✅ تم الطلب بنجاح!")
         u_name = msg.from_user.username or "لا يوجد"
-        admin_txt = f"🔔 شراء جديد!\n👤 الاسم: {user_info[0]}\n🔗 اليوزر: @{u_name}\n🛒 الخدمة: {data['sid']}\n💰 التكلفة: {data['total']}"
-        await bot.send_message(ADMIN_ID, admin_txt)
+        await bot.send_message(ADMIN_ID, f"🔔 شراء جديد!\n👤 الاسم: {user_info[0]}\n🔗 اليوزر: @{u_name}\n💰 التكلفة: {data['total']}")
     await state.clear()
 
+# --- الإدارة ---
 @dp.callback_query(F.data.startswith("app_"))
 async def approve(call: types.CallbackQuery):
     _, uid, amt = call.data.split("_")
@@ -168,9 +170,11 @@ async def approve(call: types.CallbackQuery):
     await call.message.edit_caption(caption="✅ تمت الموافقة.")
     await bot.send_message(uid, f"🎉 تم شحن رصيدك بـ {amt} ج!")
 
-@dp.callback_query(F.data == "rej")
+@dp.callback_query(F.data.startswith("rej_"))
 async def reject(call: types.CallbackQuery):
+    uid = call.data.split("_")[1]
     await call.message.edit_caption(caption="❌ تم الرفض.")
+    await bot.send_message(uid, "⚠️ عذراً، طلبك للشحن غير صحيح.")
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_main(call: types.CallbackQuery):
