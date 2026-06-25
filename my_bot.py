@@ -61,22 +61,36 @@ class UserStates(StatesGroup):
     waiting_for_quantity = State()
     waiting_for_link = State()
 
-# --- دالة مراقبة الطلبات ---
+# --- دالة مراقبة الطلبات المحدثة ---
 async def check_order_status():
     while True:
-        cursor.execute("SELECT order_id, user_id FROM orders WHERE status != 'Completed'")
+        cursor.execute("SELECT order_id, user_id, status FROM orders WHERE status != 'Completed'")
         orders = cursor.fetchall()
-        for o_id, u_id in orders:
+        for o_id, u_id, current_status in orders:
             try:
                 req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'status', 'order': o_id})
                 if req.status_code == 200:
                     status = req.json().get('status')
-                    if status == 'Completed':
+                    
+                    # إذا كان الطلب في الموقع "قيد الانتظار"
+                    if status == 'Pending' and current_status != 'Pending_Notified':
+                        await bot.send_message(u_id, "⏳ طلبك في قائمة الانتظار، يرجى الانتظار حتى يبدأ تنفيذ الطلب.")
+                        cursor.execute("UPDATE orders SET status = 'Pending_Notified' WHERE order_id = ?", (o_id,))
+                        db.commit()
+                    
+                    # إذا كان الطلب في الموقع "قيد التنفيذ"
+                    elif status == 'In progress' and current_status != 'InProgress_Notified':
+                        await bot.send_message(u_id, "🚀 طلبك قيد التنفيذ الآن! ادخل وشاهد التغيير بنفسك، سيتم اكتمال الطلب خلال 10 دقائق.")
+                        cursor.execute("UPDATE orders SET status = 'InProgress_Notified' WHERE order_id = ?", (o_id,))
+                        db.commit()
+
+                    # إذا اكتمل الطلب
+                    elif status == 'Completed':
                         cursor.execute("UPDATE orders SET status = 'Completed' WHERE order_id = ?", (o_id,))
                         db.commit()
                         await bot.send_message(u_id, "✅ تم تنفيذ طلبك بنجاح!")
             except: pass
-        await asyncio.sleep(120)
+        await asyncio.sleep(60) # فحص كل دقيقة
 
 # --- القائمة الرئيسية ---
 def main_menu():
@@ -156,7 +170,6 @@ async def get_qty(msg: types.Message, state: FSMContext):
     if not msg.text.isdigit(): return await msg.answer("❌ أرقام فقط!")
     qty = int(msg.text)
     data = await state.get_data()
-    # حساب السعر (Price per 1000)
     service_price = CATEGORIES[data['cat']]['services'][data['sid']]['price']
     total = (qty / 1000) * service_price
     await state.update_data(qty=qty, total=total)
@@ -166,22 +179,19 @@ async def get_qty(msg: types.Message, state: FSMContext):
 @dp.message(UserStates.waiting_for_link)
 async def finish_order(msg: types.Message, state: FSMContext):
     data = await state.get_data()
-    # 1. التحقق من الرصيد
     cursor.execute("SELECT balance FROM users WHERE user_id=?", (msg.from_user.id,))
     user_bal = cursor.fetchone()[0]
     
     if user_bal < data['total']:
         return await msg.answer(f"❌ رصيدك غير كافٍ! رصيدك: {user_bal} ج.م")
     
-    # 2. إرسال الطلب للموقع
     req = requests.post(SMMWIZ_URL, data={'key': API_KEY, 'action': 'add', 'service': data['sid'], 'link': msg.text, 'quantity': data['qty']})
     
     if req.status_code == 200 and 'order' in req.json():
-        # 3. خصم الرصيد
         cursor.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (data['total'], msg.from_user.id))
         cursor.execute("INSERT INTO orders VALUES (?, ?, 'Pending')", (req.json()['order'], msg.from_user.id))
         db.commit()
-        await msg.answer("✅ تم الطلب وخصم الرصيد بنجاح!")
+        await msg.answer("✅ تم الطلب بنجاح! سيتم إخطارك بأي تحديث.")
     else:
         await msg.answer("❌ فشل الاتصال بالسيرفر.")
     await state.clear()
